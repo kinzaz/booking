@@ -1,0 +1,49 @@
+:root {
+  font-family: Inter, system-ui, sans-serif;
+  color: #21261e;
+  background: #f4f3ec;
+  line-height: 1.5;
+  font-synthesis: none;
+}
+* { box-sizing: border-box; }
+body { margin: 0; }
+a { color: inherit; }
+.wrap { width: min(1120px, calc(100% - 40px)); margin-inline: auto; }
+.top { border-bottom: 1px solid #dcdfd4; }
+.nav { display: flex; align-items: center; justify-content: space-between; min-height: 64px; }
+.brand { font-size: 1.55rem; font-weight: 800; text-decoration: none; letter-spacing: -.06em; }
+.brand span, h1 span { color: #506747; }
+.intro { padding: clamp(42px, 8vw, 102px) 0 45px; }
+h1, h2, h3, p { margin: 0; }
+h1 { font-size: clamp(2.8rem, 8vw, 6.5rem); letter-spacing: -.085em; line-height: .99; }
+.intro p { margin-top: 24px; font-size: 1.15rem; color: #485143; }
+h2 { font-size: clamp(1.6rem, 4vw, 2.35rem); letter-spacing: -.045em; }
+.section-head, .card-actions { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; }
+.section-head { border-top: 1px solid #c8cec0; padding: 18px 0; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 290px), 1fr)); gap: 16px; }
+.card { background: #fffdf7; border: 1px solid #d9ded1; border-radius: 16px; overflow: hidden; }
+.category { padding: 22px; font-weight: 750; color: #283426; }
+.tone-0 { background: #dbe6cd; }
+.tone-1 { background: #f1dfbf; }
+.tone-2 { background: #e2def1; }
+.tone-3 { background: #e7dccf; }
+.card-body { display: grid; gap: 10px; padding: 20px; }
+.date, .venue { color: #50594c; }
+.card-actions { margin-top: 8px; }
+button, input { font: inherit; border-radius: 8px; padding: 9px 13px; }
+button { background: #293d29; color: white; border: 1px solid #293d29; cursor: pointer; font-weight: 650; }
+button:hover:not(:disabled) { background: #405c3a; color: white; }
+button:disabled { opacity: .5; cursor: default; }
+button.secondary { background: transparent; color: #293d29; }
+input { background: #fffdf7; color: inherit; border: 1px solid #778471; min-width: 0; }
+:focus-visible { outline: 3px solid #365d95; outline-offset: 3px; }
+.booking-form, .reservation { border-top: 1px solid #d9ded1; padding-top: 14px; }
+.booking-form label { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.booking-form input { width: 76px; }
+.form-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.lookup { margin: 48px 0; padding: clamp(18px, 4vw, 32px); background: #e5eadc; border-radius: 16px; }
+.lookup form, .reservation { margin-top: 14px; }
+.lookup input { flex: 1 1 250px; max-width: 420px; }
+.reservation p, [role=alert] { margin-block: 8px; }
+.reservation-id { overflow-wrap: anywhere; font-family: monospace; }
+[role=alert] { color: #8b2a2a; }

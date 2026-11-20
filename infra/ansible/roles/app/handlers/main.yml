@@ -1,0 +1,5 @@
+- name: Перезапустить API
+  ansible.builtin.systemd_service:
+    name: tickets-api.service
+    daemon_reload: true
+    state: restarted

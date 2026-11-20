@@ -1,0 +1,32 @@
+- name: Создать пользователя приложения
+  ansible.builtin.user:
+    name: "{{ app_user }}"
+    state: present
+    create_home: true
+    shell: /bin/bash
+
+- name: Создать каталог SSH пользователя приложения
+  ansible.builtin.file:
+    path: "/home/{{ app_user }}/.ssh"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: '0700'
+
+- name: Прочитать разрешённые ключи ec2-user
+  ansible.builtin.slurp:
+    src: /home/ec2-user/.ssh/authorized_keys
+  register: source_authorized_keys
+
+- name: Добавить ключи для доступа к пользователю приложения
+  ansible.builtin.lineinfile:
+    path: "/home/{{ app_user }}/.ssh/authorized_keys"
+    line: "{{ item }}"
+    create: true
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: '0600'
+  loop: "{{ (source_authorized_keys.content | b64decode).splitlines() }}"
+  when:
+    - item | trim | length > 0
+    - not item.lstrip().startswith('#')

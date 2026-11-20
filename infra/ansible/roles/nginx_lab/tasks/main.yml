@@ -1,0 +1,98 @@
+- name: Установить Nginx
+  ansible.builtin.package:
+    name: nginx
+    state: present
+
+- name: Разместить конфигурацию учебной страницы
+  ansible.builtin.template:
+    src: ansible-lab.conf.j2
+    dest: /etc/nginx/conf.d/ansible-lab.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Перечитать конфигурацию Nginx
+
+- name: Установить OpenSSL
+  ansible.builtin.package:
+    name: openssl
+    state: present
+
+- name: Собрать сведения об установленных пакетах
+  ansible.builtin.package_facts:
+    manager: auto
+
+- name: Установить curl при отсутствии обеих версий
+  ansible.builtin.package:
+    name: curl-minimal
+    state: present
+  when:
+    - "'curl' not in ansible_facts.packages"
+    - "'curl-minimal' not in ansible_facts.packages"
+
+- name: Проверить наличие сертификата
+  ansible.builtin.stat:
+    path: /etc/nginx/tickets-lab.crt
+  register: nginx_lab_certificate
+
+- name: Проверить наличие ключа сертификата
+  ansible.builtin.stat:
+    path: /etc/nginx/tickets-lab.key
+  register: nginx_lab_private_key
+
+- name: Создать учебный сертификат и ключ
+  ansible.builtin.command:
+    argv:
+      - openssl
+      - req
+      - -x509
+      - -nodes
+      - -newkey
+      - rsa:2048
+      - -days
+      - "30"
+      - -keyout
+      - /etc/nginx/tickets-lab.key
+      - -out
+      - /etc/nginx/tickets-lab.crt
+      - -subj
+      - /CN=tickets.invalid
+      - -addext
+      - subjectAltName=DNS:tickets.invalid
+  when: >
+    not nginx_lab_certificate.stat.exists or
+    not nginx_lab_private_key.stat.exists
+  notify: Перечитать конфигурацию Nginx
+
+- name: Установить права на ключ сертификата
+  ansible.builtin.file:
+    path: /etc/nginx/tickets-lab.key
+    owner: root
+    group: root
+    mode: '0600'
+
+- name: Установить права на сертификат
+  ansible.builtin.file:
+    path: /etc/nginx/tickets-lab.crt
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Разместить конфигурацию прокси API
+  ansible.builtin.template:
+    src: tickets.conf.j2
+    dest: /etc/nginx/conf.d/tickets.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Перечитать конфигурацию Nginx
+
+- name: Проверить конфигурацию Nginx
+  ansible.builtin.command:
+    cmd: nginx -t
+  changed_when: false
+
+- name: Запустить Nginx и включить автозапуск
+  ansible.builtin.service:
+    name: nginx
+    state: started
+    enabled: true

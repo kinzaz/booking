@@ -1,0 +1,15 @@
+[Unit]
+Description=Tickets API
+Wants=postgresql.service
+After=postgresql.service
+
+[Service]
+User={{ app_user }}
+WorkingDirectory=/home/{{ app_user }}/{{ application_name }}/app
+Environment=HTTP_ADDR=127.0.0.1:8080
+Environment="DATABASE_URL=postgres://tickets_app@127.0.0.1:5432/tickets?sslmode=disable"
+EnvironmentFile=/etc/tickets-api.env
+ExecStart=/home/{{ app_user }}/{{ application_name }}/app/tickets-api
+
+[Install]
+WantedBy=multi-user.target

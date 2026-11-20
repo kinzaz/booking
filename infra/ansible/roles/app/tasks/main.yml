@@ -1,0 +1,139 @@
+- name: Создать каталог приложения
+  ansible.builtin.file:
+    path: "/home/{{ app_user }}/{{ application_name }}"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: '0755'
+
+- name: Создать файл из шаблона
+  ansible.builtin.template:
+    src: environment.txt.j2
+    dest: "/home/{{ app_user }}/{{ application_name }}/environment.txt"
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: '0644'
+
+- name: Прочитать файл окружения
+  ansible.builtin.slurp:
+    src: "/home/{{ app_user }}/{{ application_name }}/environment.txt"
+  register: app_environment_file
+
+- name: Проверить содержимое файла окружения
+  ansible.builtin.assert:
+    that:
+      - "'Application: ' ~ application_name in app_environment_text"
+      - "'Environment: ' ~ environment_name in app_environment_text"
+      - "'User: ' ~ app_user in app_environment_text"
+    success_msg: Файл окружения содержит ожидаемые значения.
+    fail_msg: Содержимое файла окружения не соответствует переменным.
+  vars:
+    app_environment_text: "{{ app_environment_file.content | b64decode }}"
+
+- name: Установить Go
+  ansible.builtin.package:
+    name: golang
+    state: present
+
+- name: Узнать версию Go
+  ansible.builtin.command:
+    cmd: go version
+  register: app_go_version
+  changed_when: false
+
+- name: Проверить совместимость версии Go
+  ansible.builtin.assert:
+    that:
+      - app_go_version.stdout is search('go1\.(2[4-9]|[3-9][0-9])([.\s-]|$)')
+    success_msg: Версия Go подходит для сборки API.
+    fail_msg: Для сборки API нужен Go 1.24 или новее в ветке Go 1.x.
+
+- name: Показать версию Go
+  ansible.builtin.debug:
+    msg: "{{ app_go_version.stdout }}"
+
+- name: Создать каталог исходников API
+  ansible.builtin.file:
+    path: "/home/{{ app_user }}/{{ application_name }}/app"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: '0755'
+
+- name: Скопировать исходники API
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/../../app/{{ item }}"
+    dest: "/home/{{ app_user }}/{{ application_name }}/app/"
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: preserve
+  loop:
+    - go.mod
+    - go.sum
+    - api
+    - internal
+  register: app_sources
+
+- name: Сбросить отметку сборки при обновлении исходников
+  ansible.builtin.file:
+    path: "/home/{{ app_user }}/{{ application_name }}/app/.build-success"
+    state: absent
+  when: app_sources.changed or (app_force_build | bool)
+
+- name: Проверить отметку успешной сборки
+  ansible.builtin.stat:
+    path: "/home/{{ app_user }}/{{ application_name }}/app/.build-success"
+  register: app_build_marker
+
+- name: Проверить наличие бинарника API
+  ansible.builtin.stat:
+    path: "/home/{{ app_user }}/{{ application_name }}/app/tickets-api"
+  register: app_binary
+
+- name: Собрать и установить API
+  become_user: "{{ app_user }}"
+  when: not app_build_marker.stat.exists or not app_binary.stat.exists
+  block:
+    - name: Собрать новый бинарник API
+      ansible.builtin.command:
+        cmd: go build -o tickets-api.next ./api
+        chdir: "/home/{{ app_user }}/{{ application_name }}/app"
+
+    - name: Заменить бинарник API
+      ansible.builtin.command:
+        cmd: mv -f tickets-api.next tickets-api
+        chdir: "/home/{{ app_user }}/{{ application_name }}/app"
+      notify: Перезапустить API
+
+    - name: Записать отметку успешной сборки
+      ansible.builtin.copy:
+        content: "Build completed successfully.\n"
+        dest: "/home/{{ app_user }}/{{ application_name }}/app/.build-success"
+        mode: '0644'
+
+- name: Создать файл окружения API
+  ansible.builtin.template:
+    src: tickets-api.env.j2
+    dest: /etc/tickets-api.env
+    owner: root
+    group: root
+    mode: '0600'
+  no_log: true
+  diff: false
+  notify: Перезапустить API
+
+- name: Разместить описание службы API
+  ansible.builtin.template:
+    src: tickets-api.service.j2
+    dest: /etc/systemd/system/tickets-api.service
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Перезапустить API
+
+- name: Запустить API и включить автозапуск
+  ansible.builtin.systemd_service:
+    name: tickets-api.service
+    state: started
+    enabled: true
+    daemon_reload: true

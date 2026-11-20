@@ -1,0 +1,2 @@
+postgres_app_user: tickets_app
+postgres_app_database: tickets

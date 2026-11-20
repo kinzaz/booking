@@ -1,0 +1,26 @@
+- name: Первое упражнение с Ansible
+  hosts: lab
+  gather_facts: false
+
+  vars:
+    application_name: tickets
+    environment_name: lab
+
+  tasks:
+    - name: Создать каталог для упражнения
+      ansible.builtin.file:
+        path: /home/ec2-user/ansible-lab
+        state: directory
+        mode: '0755'
+
+    - name: Создать файл из шаблона
+      ansible.builtin.template:
+        src: hello.txt.j2
+        dest: /home/ec2-user/ansible-lab/hello.txt
+        mode: '0644'
+      notify: Сообщить об изменении файла
+
+  handlers:
+    - name: Сообщить об изменении файла
+      ansible.builtin.debug:
+        msg: Файл hello.txt изменился — handler выполнен.

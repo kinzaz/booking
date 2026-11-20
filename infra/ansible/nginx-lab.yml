@@ -1,0 +1,7 @@
+- name: Настроить учебную страницу Nginx
+  hosts: lab
+  become: true
+  gather_facts: false
+
+  roles:
+    - nginx_lab

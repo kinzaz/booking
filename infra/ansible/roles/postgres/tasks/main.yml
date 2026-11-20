@@ -1,0 +1,67 @@
+- name: Установить сервер PostgreSQL
+  ansible.builtin.package:
+    name: postgresql16-server
+    state: present
+
+- name: Инициализировать кластер PostgreSQL
+  ansible.builtin.command:
+    cmd: postgresql-setup --initdb
+    creates: /var/lib/pgsql/data/PG_VERSION
+
+- name: Запустить PostgreSQL и включить автозапуск
+  ansible.builtin.systemd_service:
+    name: postgresql.service
+    state: started
+    enabled: true
+
+- name: Установить PostgreSQL и Python-драйвер
+  ansible.builtin.package:
+    name:
+      - postgresql16-server
+      - python3-psycopg2
+    state: present
+
+- name: Проверить подключение к PostgreSQL
+  become_user: postgres
+  community.postgresql.postgresql_ping:
+    login_user: postgres
+    login_db: postgres
+  register: postgres_connection
+
+- name: Подтвердить доступность PostgreSQL
+  ansible.builtin.assert:
+    that:
+      - postgres_connection.is_available
+    success_msg: Ansible подключился к PostgreSQL.
+    fail_msg: Ansible не смог подключиться к PostgreSQL.
+
+- name: Создать роль приложения в PostgreSQL
+  become_user: postgres
+  community.postgresql.postgresql_user:
+    login_user: postgres
+    login_db: postgres
+    name: "{{ postgres_app_user }}"
+    password: "{{ vault_postgres_app_password }}"
+    role_attr_flags: LOGIN
+    state: present
+  no_log: true
+
+- name: Создать базу приложения
+  become_user: postgres
+  community.postgresql.postgresql_db:
+    login_user: postgres
+    name: "{{ postgres_app_database }}"
+    owner: "{{ postgres_app_user }}"
+    state: present
+
+- name: Разрешить подключение API к PostgreSQL
+  ansible.builtin.lineinfile:
+    path: /var/lib/pgsql/data/pg_hba.conf
+    regexp: '^\s*host\s+{{ postgres_app_database }}\s+{{ postgres_app_user }}\s+127\.0\.0\.1/32\s+'
+    line: "host    {{ postgres_app_database }}    {{ postgres_app_user }}    127.0.0.1/32    scram-sha-256"
+    insertbefore: '^\s*host\s+all\s+all\s+127\.0\.0\.1/32\s+'
+    backup: true
+  notify: Перечитать конфигурацию PostgreSQL
+
+- name: Применить настройки PostgreSQL перед настройкой API
+  ansible.builtin.meta: flush_handlers

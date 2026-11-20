@@ -1,0 +1,163 @@
+- name: Установить Python для Certbot
+  ansible.builtin.package:
+    name:
+      - python3.12
+      - python3.12-pip
+    state: present
+
+- name: Установить Certbot в отдельное окружение
+  ansible.builtin.pip:
+    name: certbot==5.4.0
+    virtualenv: /opt/certbot
+    virtualenv_command: /usr/bin/python3.12 -m venv
+
+- name: Проверить версию Certbot
+  ansible.builtin.command:
+    cmd: /opt/certbot/bin/certbot --version
+  register: certbot_version
+  changed_when: false
+
+- name: Показать версию Certbot
+  ansible.builtin.debug:
+    msg: "{{ certbot_version.stdout }}"
+
+- name: Создать каталог проверки ACME
+  ansible.builtin.file:
+    path: /var/www/letsencrypt/.well-known/acme-challenge
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Создать тестовый файл ACME
+  ansible.builtin.copy:
+    content: "acme-check-ok\n"
+    dest: /var/www/letsencrypt/.well-known/acme-challenge/check.txt
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Разместить HTTP-конфигурацию ACME
+  ansible.builtin.template:
+    src: public-http.conf.j2
+    dest: /etc/nginx/conf.d/public-http.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Перечитать Nginx для публичного HTTPS
+
+- name: Проверить конфигурацию Nginx
+  ansible.builtin.command:
+    cmd: nginx -t
+  changed_when: false
+
+- name: Применить HTTP-конфигурацию перед выпуском сертификатов
+  ansible.builtin.meta: flush_handlers
+
+- name: Выпустить сертификат для публичного IP
+  ansible.builtin.command:
+    argv:
+      - /opt/certbot/bin/certbot
+      - certonly
+      - --non-interactive
+      - --agree-tos
+      - --email
+      - "{{ public_https_email }}"
+      - --webroot
+      - --webroot-path
+      - /var/www/letsencrypt
+      - --preferred-profile
+      - shortlived
+      - --ip-address
+      - "{{ public_https_ip }}"
+      - --cert-name
+      - tickets-ip
+    creates: /etc/letsencrypt/live/tickets-ip/fullchain.pem
+
+- name: Подключить HTTPS для публичного IP
+  ansible.builtin.template:
+    src: public-ip-https.conf.j2
+    dest: /etc/nginx/conf.d/public-ip-https.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Перечитать Nginx для публичного HTTPS
+
+- name: Проверить конфигурацию после подключения HTTPS
+  ansible.builtin.command:
+    cmd: nginx -t
+  changed_when: false
+
+- name: Создать каталог обработчиков продления Certbot
+  ansible.builtin.file:
+    path: /etc/letsencrypt/renewal-hooks/deploy
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Установить обработчик обновления сертификатов
+  ansible.builtin.template:
+    src: reload-nginx.sh.j2
+    dest: /etc/letsencrypt/renewal-hooks/deploy/reload-nginx
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Установить службу продления сертификатов
+  ansible.builtin.template:
+    src: certbot-renew.service.j2
+    dest: /etc/systemd/system/certbot-renew.service
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Установить таймер продления сертификатов
+  ansible.builtin.template:
+    src: certbot-renew.timer.j2
+    dest: /etc/systemd/system/certbot-renew.timer
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Перезапустить таймер продления сертификатов
+
+- name: Включить таймер продления сертификатов
+  ansible.builtin.systemd_service:
+    name: certbot-renew.timer
+    daemon_reload: true
+    enabled: true
+    state: started
+
+- name: Выпустить сертификат для доменного имени
+  ansible.builtin.command:
+    argv:
+      - /opt/certbot/bin/certbot
+      - certonly
+      - --non-interactive
+      - --agree-tos
+      - --email
+      - "{{ public_https_email }}"
+      - --webroot
+      - --webroot-path
+      - /var/www/letsencrypt
+      - --domain
+      - "{{ public_https_domain }}"
+      - --cert-name
+      - tickets-domain
+    creates: /etc/letsencrypt/live/tickets-domain/fullchain.pem
+  when: public_https_domain_enabled | bool
+
+- name: Подключить HTTPS для доменного имени
+  ansible.builtin.template:
+    src: public-domain-https.conf.j2
+    dest: /etc/nginx/conf.d/public-domain-https.conf
+    owner: root
+    group: root
+    mode: '0644'
+  when: public_https_domain_enabled | bool
+  notify: Перечитать Nginx для публичного HTTPS
+
+- name: Проверить итоговую конфигурацию Nginx
+  ansible.builtin.command:
+    cmd: nginx -t
+  changed_when: false

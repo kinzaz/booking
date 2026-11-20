@@ -1,0 +1,7 @@
+- name: Настроить публичный HTTPS
+  hosts: tickets-clean
+  become: true
+  gather_facts: false
+
+  roles:
+    - public_https

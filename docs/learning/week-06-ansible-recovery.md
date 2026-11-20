@@ -2,7 +2,7 @@
 
 Конспект выполненных упражнений 18–19 ноября 2026 года. Содержит команды, объяснения и снимок текущих файлов проекта. Команды для Mac выполнялись из `/Users/kinzaz/Documents/infra`, если явно не указано другое место. Команды внутри `ssh '…'` выполняются на VM.
 
-Публичный DNS и публичный HTTPS ещё предстоят. Учебный HTTPS на loopback-адресе уже проверен. Архив базы восстановлен на Mac в отдельном экземпляре PostgreSQL, и API прочитал из него прежнюю бронь.
+Дополнение от 20 ноября 2026 года описывает публичный DNS и HTTPS по IP и домену. Учебный HTTPS на loopback-адресе также проверен. Архив базы восстановлен на Mac в отдельном экземпляре PostgreSQL, и API прочитал из него прежнюю бронь.
 
 ## Содержание
 
@@ -1287,23 +1287,637 @@ PostgreSQL на EC2 → pg_dump → архив на Mac
 | Восстановление в другом экземпляре PostgreSQL | Выполнено |
 | Чтение прежней брони через SQL и API | Подтверждено |
 | Полностью непрерывный первый прогон после всех исправлений на ещё одной чистой VM | Ещё не проверен |
-| Публичный DNS, доверенный публичный HTTPS и внешний smoke-тест | Предстоят |
+| Публичный DNS, доверенный публичный HTTPS и внешний smoke-тест | Пройдены 20 ноября, см. раздел 18 |
 
 ### Обнаруженные ограничения текущей реализации
 
 - Маркер сборки и уведомления handlers не гарантируют восстановление после любого возможного прерывания. Подробности описаны в разделах сборки и первого развёртывания.
 - Учебный TLS-сертификат не продлевается автоматически. Генерация проверяет наличие файлов, а не их срок и соответствие.
 - Служба API имеет After=postgresql.service, но автоматический повтор запуска после неготовности базы в unit-файле пока не настроен.
-- Слушатели, которыми управляет наша конфигурация Nginx, привязаны к loopback. Полная настройка стандартного server-блока из nginx.conf на чистой VM ещё не перенесена в роль. Security group новой VM пропускает входящий SSH с выбранного адреса.
+- Роль public_https добавляет внешние слушатели 80 и 443. Стандартный server-блок nginx.conf сохранён. Security group после ручных изменений разрешает TCP 22, 80 и 443 с 0.0.0.0/0. Полная проверка остальных внешних портов ещё предстоит.
 - Конспект фиксирует успешную проверку одной брони. Измерения времени восстановления, допустимой потери данных, автоматическое расписание копирования и проверка всей базы пока не проводились.
 
 ### Ресурсы после упражнения
 
-На момент последнего подтверждения новая EC2 оставалась запущенной. Исходная linux-test также использовалась в курсе. На Mac созданы tickets-restore-db, tickets-restore-api, том tickets-restore-data, сеть tickets-restore и образ tickets-api:restore. Их удаление в этом упражнении не выполнялось.
+На момент последнего подтверждения новая EC2 оставалась запущенной. Пользователь подтвердил удаление исходной linux-test через AWS Console. Оставшиеся после неё диски отдельно не проверены. На Mac созданы tickets-restore-db, tickets-restore-api, том tickets-restore-data, сеть tickets-restore и образ tickets-api:restore. Их удаление в этом упражнении не выполнялось.
 
 После завершения работы предстоит удалить ненужные EC2 и отдельно проверить диски, снимки, публичные адреса и балансировщики. Бюджетные уведомления не останавливают ресурсы. Перед удалением нужно решить, какие данные и артефакты сохранить.
 
-### Следующий этап курса
+### Последующее продолжение
 
-Выбрать доменное имя, настроить DNS на новую VM, перенести внешние слушатели Nginx в Ansible, открыть необходимые внешние порты, получить доверенный сертификат и выполнить smoke-тест снаружи. На момент составления конспекта домен ещё не выбран.
+Настройку домена и публичного HTTPS выполнили 20 ноября. Подробности и оставшиеся проверки описаны ниже.
 
+
+## 18. Публичный HTTPS по IP и домену — 20 ноября
+
+В этой части пользователь самостоятельно выполнял команды и менял конфигурации, ассистент давал инструкции. Проверки успеха приведены по присланным результатам. Настройка публичного входа находится в отдельной роли public_https.
+
+### 18.1. Домен и проблема подтверждения email
+
+Попытка поиска домена в Route 53 завершилась AccessDeniedException с сообщением Free Tier accounts are not supported for this service. Обсудили ограничение Free account plan. План AWS для покупки домена не меняли. Пользователь сообщил об уже купленном в Timeweb домене test-stand.fun. Выбрали поддомен tickets.test-stand.fun.
+
+В управлении DNS потребовалась запись A с именем tickets и значением 13.60.98.7. При первой проверке dig сообщал no servers could be reached. Прямые запросы к публичным DNS по UDP, TCP и HTTPS возвращали REFUSED. DNS-over-HTTPS показал сервер verification-hold.suspended-domain.com с адресом 127.0.0.1. Это указывало на блокировку, связанную с подтверждением регистрационных данных. Пользователь подтвердил email владельца. Делегирование восстановилось не сразу.
+
+Финальная проверка дала следующий результат.
+
+```bash
+dig @1.1.1.1 tickets.test-stand.fun A +noall +comments +answer
+```
+
+```text
+status: NOERROR
+tickets.test-stand.fun. 600 IN A 13.60.98.7
+```
+
+NOERROR означает успешную обработку запроса. A-запись возвращает IPv4. TTL 600 означает возможность кэширования на десять минут. У корневого test-stand.fun A-запись для этого упражнения не требовалась.
+
+### 18.2. SSH после смены исходящего IP
+
+При попытке SSH получали timeout during banner exchange до аутентификации. AWS показывал Running и 3/3 checks passed. Текущий исходящий IPv4 Mac оказался 89.125.23.119, а исходное правило разрешало 89.125.22.80/32. Смена IP объясняла возможную сетевую блокировку, но сама по себе диагностика баннера не доказывала единственную причину.
+
+Пользователь выбрал SSH с любого IPv4 и изменил источник на 0.0.0.0/0. Это разрешает попытки подключения к порту 22 со всего интернета, проверка SSH-ключа сохраняется.
+
+### 18.3. Открытие веб-портов
+
+В AWS открыли EC2 → tickets-ansible-clean → Security → security group → Edit inbound rules. Добавили HTTP TCP 80 и HTTPS TCP 443 с источником Anywhere-IPv4. В итоге пользователь показал три входящих правила.
+
+| Тип | Порт | Источник |
+| --- | --- | --- |
+| SSH | 22 | 0.0.0.0/0 |
+| HTTP | 80 | 0.0.0.0/0 |
+| HTTPS | 443 | 0.0.0.0/0 |
+
+Правила менялись вручную в AWS. Роль public_https ими не управляет. Входящее правило относится к соединению, приходящему на EC2. Ответный трафик security group разрешает благодаря отслеживанию состояния соединения.
+
+На Mac проверили внешний HTTP.
+
+```bash
+curl --connect-timeout 5 --max-time 10 -i http://13.60.98.7/
+```
+
+Получили HTTP/1.1 200 OK от nginx/1.30.7 со стандартной страницей. Connect-timeout ограничивает установку соединения, max-time — весь запрос, -i выводит заголовки.
+
+### 18.4. HTTP-01 и первый тестовый файл
+
+На VM через ec2-user создали файл в корне стандартного Nginx.
+
+```bash
+sudo mkdir -p /usr/share/nginx/html/.well-known/acme-challenge
+printf 'acme-check-ok\n' | sudo tee /usr/share/nginx/html/.well-known/acme-challenge/check.txt
+```
+
+С Mac запросили файл.
+
+```bash
+curl --connect-timeout 5 --max-time 10 -fsS \
+  http://13.60.98.7/.well-known/acme-challenge/check.txt
+```
+
+Ответ acme-check-ok подтвердил внешний доступ. Затем перенесли подготовку в Ansible и выделили постоянный каталог /var/www/letsencrypt. Старый тестовый файл в стандартном корне автоматически не удаляли.
+
+HTTP-01 подтверждает управление HTTP-сервером на адресе. Certbot получает задание ACME, помещает файл с вычисленным ответом в .well-known/acme-challenge, центр сертификации читает его через порт 80. Успешная проверка позволяет выдачу сертификата.
+
+### 18.5. Структура роли и переменные хоста
+
+На Mac создали каталоги.
+
+```bash
+mkdir -p infra/ansible/roles/public_https/{defaults,tasks,templates,handlers}
+mkdir -p infra/ansible/host_vars
+```
+
+Host_vars/tickets-clean.yml соответствует имени хоста в inventory. Сначала public_https_domain_enabled был false, чтобы выпустить IP-сертификат во время ожидания DNS. После восстановления DNS значение поменяли на true.
+
+#### Defaults роли
+
+Файл `infra/ansible/roles/public_https/defaults/main.yml`.
+
+```yaml
+public_https_ip: ""
+public_https_domain: ""
+public_https_domain_enabled: false
+public_https_email: ""
+```
+
+#### Переменные новой VM
+
+Файл `infra/ansible/host_vars/tickets-clean.yml`.
+
+```yaml
+public_https_ip: "13.60.98.7"
+public_https_domain: tickets.test-stand.fun
+public_https_domain_enabled: true
+public_https_email: kinzazdev579@gmail.com
+```
+
+#### Отдельный playbook HTTPS
+
+Файл `infra/ansible/public-https.yml`.
+
+```yaml
+- name: Настроить публичный HTTPS
+  hosts: tickets-clean
+  become: true
+  gather_facts: false
+
+  roles:
+    - public_https
+```
+
+### 18.6. Установка Certbot
+
+В репозитории Amazon Linux обнаружили Certbot 2.6.0. Для IP-сертификатов через webroot выбрали Certbot 5.4.0. Роль устанавливает python3.12 и python3.12-pip, создаёт venv /opt/certbot и устанавливает certbot==5.4.0 через pip. Python 3.9 остаётся интерпретатором модулей Ansible.
+
+Модуль pip получает virtualenv и virtualenv_command. В результате клиент находится в /opt/certbot/bin/certbot. Пользователь получил certbot 5.4.0 из задачи проверки версии.
+
+Для работы только с этой ролью запускали отдельный playbook.
+
+```bash
+ansible-playbook -i infra/ansible/inventory.ini \
+  infra/ansible/public-https.yml --syntax-check --ask-vault-pass
+
+ansible-playbook -i infra/ansible/inventory.ini \
+  infra/ansible/public-https.yml --ask-vault-pass --diff
+```
+
+### 18.7. HTTP-конфигурация и отдельный webroot
+
+Роль создаёт /var/www/letsencrypt/.well-known/acme-challenge с правами 0755 и check.txt с правами 0644. HTTP-конфигурация размещается в /etc/nginx/conf.d/public-http.conf.
+
+Root добавляет URI к каталогу /var/www/letsencrypt. Try_files возвращает 404 при отсутствии файла. Префикс ^~ у ACME-location обеспечивает выбор этого префикса без последующего поиска regex-location. Обычный location / сначала возвращал 503. После успешного HTTPS заменили его на 308.
+
+#### Итоговый HTTP-шаблон
+
+Файл `infra/ansible/roles/public_https/templates/public-http.conf.j2`.
+
+```nginx
+server {
+    listen 80;
+    server_name {{ public_https_ip }} {{ public_https_domain }};
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+
+    location / {
+        return 308 https://$host$request_uri;
+    }
+}
+```
+
+После применения снова получили acme-check-ok с публичного IP. При дальнейшей настройке домен использует тот же webroot.
+
+### 18.8. Выпуск IP-сертификата
+
+В роль добавили certbot certonly с webroot, preferred-profile shortlived, ip-address и cert-name tickets-ip. Certonly получает файлы, Nginx настраивается шаблонами. Non-interactive исключает вопросы, agree-tos принимает условия Let’s Encrypt, email задаёт контакт ACME-аккаунта. Creates пропускает первоначальный выпуск при наличии fullchain.pem.
+
+После применения на VM проверили сертификат.
+
+```bash
+sudo openssl x509 -in /etc/letsencrypt/live/tickets-ip/fullchain.pem \
+  -noout -issuer -dates -ext subjectAltName
+```
+
+Пользователь прислал следующие значения.
+
+```text
+issuer=C=US, O=Let's Encrypt, CN=YE1
+notBefore=Nov 20 15:08:13 2026 GMT
+notAfter=Nov 27 07:08:12 2026 GMT
+IP Address:13.60.98.7
+```
+
+IP-сертификат действует около шести суток, здесь до 27 ноября 10:08 по Москве. Это срок конкретного первого сертификата. После продления даты будут другими. В SAN присутствует iPAddress. Сертификат домена с одним dnsName не подтверждает IP-адрес.
+
+### 18.9. Подключение IP-сертификата к Nginx
+
+Шаблон создаёт /etc/nginx/conf.d/public-ip-https.conf. Nginx принимает TLS на 443, использует сертификат и ключ из live/tickets-ip, затем проксирует в 127.0.0.1:8080. X-Forwarded-Proto передаёт исходную схему, X-Real-IP и X-Forwarded-For — информацию о клиенте, Host — имя запроса. Интерпретация доверенных proxy-заголовков самим API отдельно не проверялась.
+
+```nginx
+server {
+    listen 443 ssl default_server;
+    server_name {{ public_https_ip }};
+
+    ssl_certificate /etc/letsencrypt/live/tickets-ip/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/tickets-ip/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+После nginx -t и handler reload пользователь выполнил с Mac следующую команду.
+
+```bash
+curl --connect-timeout 5 --max-time 10 -i https://13.60.98.7/ready
+```
+
+Получили HTTP 200 и {"status":"ready"} с включённой стандартной проверкой сертификата.
+
+### 18.10. Автоматическое продление
+
+Certbot сохраняет параметры в /etc/letsencrypt/renewal/tickets-ip.conf. ACME-аккаунт находится под /etc/letsencrypt/accounts. Версии файлов сертификатов хранятся в archive, а live содержит ссылки на актуальные версии. Конфигурация Nginx ссылается на live, поэтому при продлении путь не меняется.
+
+Продление выдаёт новый сертификат с новым сроком. Оно не редактирует даты в старом сертификате. Каждая проверка renew не обязательно выпускает сертификат — Certbot оценивает, пора ли его обновлять, используя свои настройки и рекомендации ACME-сервера, если доступны.
+
+Роль создаёт службу oneshot и timer. При отсутствии User системная служба выполняется от root. Она запускает /opt/certbot/bin/certbot renew --quiet. Таймер остаётся активным и дважды в сутки активирует службу. RandomizedDelaySec добавляет задержку до часа, Persistent выполняет пропущенную календарную активацию после запуска VM.
+
+По умолчанию certbot-renew.timer активирует certbot-renew.service по совпадению основы имени. В секции Timer можно явно задать Unit=certbot-renew.service. Секция Unit в начале файла содержит общие свойства unit, а WantedBy=timers.target задаёт подключение таймера к автозапуску при enable.
+
+#### Служба продления
+
+Файл `infra/ansible/roles/public_https/templates/certbot-renew.service.j2`.
+
+```ini
+[Unit]
+Description=Renew Let's Encrypt certificates
+Wants=network-online.target
+After=network-online.target nginx.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/certbot/bin/certbot renew --quiet
+```
+
+#### Таймер
+
+Файл `infra/ansible/roles/public_https/templates/certbot-renew.timer.j2`.
+
+```ini
+[Unit]
+Description=Check Let's Encrypt certificate renewal twice daily
+
+[Timer]
+OnCalendar=*-*-* 00,12:00:00
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+#### Deploy hook
+
+Файл `infra/ansible/roles/public_https/templates/reload-nginx.sh.j2`.
+
+```sh
+#!/bin/sh
+set -eu
+/usr/sbin/nginx -t
+/usr/bin/systemctl reload nginx.service
+```
+
+Hook размещается в /etc/letsencrypt/renewal-hooks/deploy/reload-nginx с правами 0755. После успешного обновления Certbot выполняет nginx -t и systemctl reload nginx.service. Nginx перечитывает новые файлы для последующих TLS-соединений. Если проверка конфигурации неуспешна, set -e останавливает скрипт до reload.
+
+```text
+Активный timer ждёт времени
+  → systemd активирует certbot-renew.service
+  → ExecStart запускает certbot renew
+  → Certbot проверяет срок
+  → при необходимости проходит HTTP-01 и получает сертификат
+  → сохраняет новые версии и переключает ссылки live
+  → запускает deploy hook
+  → nginx -t
+  → reload Nginx
+  → команда заканчивается, timer ждёт следующего запуска
+```
+
+При неудаче продления старый сертификат остаётся доступен до окончания срока. Следующее срабатывание даёт новую попытку. Нужна диагностика по журналу, если ошибки повторяются.
+
+```bash
+systemctl list-timers certbot-renew.timer --no-pager
+systemctl show certbot-renew.timer -p Unit
+sudo journalctl -u certbot-renew.service -n 50 --no-pager
+```
+
+Пользователь показал активный timer с ACTIVATES certbot-renew.service, следующим запуском 21 ноября 00:26:50 UTC. Это 03:26:50 по Москве.
+
+### 18.11. Тест продления и внешний smoke-тест по IP
+
+```bash
+ssh -i ~/.ssh/linux-test.pem ec2-user@13.60.98.7 \
+  'sudo /opt/certbot/bin/certbot renew --cert-name tickets-ip --dry-run --run-deploy-hooks'
+
+curl -fsS https://13.60.98.7/ready
+BASE_URL=https://13.60.98.7 bash deploy/smoke.sh
+```
+
+Dry-run проверяет тестовое продление через staging, сохраняя действующий сертификат. Run-deploy-hooks включает вызов deploy hook после успешной симуляции. Для hook при dry-run используются действующие сертификаты. Пользователь подтвердил успех.
+
+Внешний smoke-тест прошёл с ID b6dcf053-020e-48d8-ad42-2682a5419cb2. Запросы шли с Mac через интернет и TLS в Nginx, API и PostgreSQL.
+
+### 18.12. Перенаправление HTTP на HTTPS
+
+В public-http.conf.j2 заменили return 503 в location / на return 308 https://$host$request_uri. Host сохраняет имя или IP, request_uri — путь и параметры. Статус 308 сохраняет метод и тело при переходе клиента. ACME-location отдаёт файлы напрямую по HTTP.
+
+```bash
+curl -I http://13.60.98.7/ready
+curl -fsSL http://13.60.98.7/ready
+curl -fsS http://13.60.98.7/.well-known/acme-challenge/check.txt
+```
+
+Подтверждены 308 с Location на HTTPS, готовность API при следовании перенаправлению и acme-check-ok для HTTP-01.
+
+### 18.13. Выпуск доменного сертификата
+
+После NOERROR и A-записи на IP VM проверили файл через домен.
+
+```bash
+curl --connect-timeout 5 --max-time 10 -fsS \
+  http://tickets.test-stand.fun/.well-known/acme-challenge/check.txt
+```
+
+В host_vars включили public_https_domain_enabled=true. Добавили выпуск с --domain tickets.test-stand.fun и --cert-name tickets-domain. Creates проверяет /etc/letsencrypt/live/tickets-domain/fullchain.pem. Задачи домена выполняются по условию public_https_domain_enabled | bool.
+
+```bash
+ssh -i ~/.ssh/linux-test.pem ec2-user@13.60.98.7 \
+  'sudo openssl x509 -in /etc/letsencrypt/live/tickets-domain/fullchain.pem -noout -issuer -dates -ext subjectAltName'
+```
+
+Пользователь подтвердил успешный выпуск и проверку. Точные даты доменного сертификата в переписке не зафиксированы. Ожидаемый SAN — DNS:tickets.test-stand.fun.
+
+### 18.14. Два TLS-сервера и ошибка выбора сертификата
+
+Добавили отдельный public-domain-https.conf с доменным сертификатом.
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name {{ public_https_domain }};
+
+    ssl_certificate /etc/letsencrypt/live/tickets-domain/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/tickets-domain/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+После reload HTTPS по IP вернул ошибку no alternative certificate subject name matches target ipv4 address. Причина — при запросе без подходящего SNI Nginx выбрал доменный блок как сервер по умолчанию и отдал сертификат домена.
+
+Исправили IP-шаблон, явно указав listen 443 ssl default_server. Доменный блок выбирается по SNI с именем tickets.test-stand.fun, IP-блок используется по умолчанию. У одного адреса и порта default_server задаётся один раз.
+
+```bash
+curl -fsS https://13.60.98.7/ready
+curl -fsS https://tickets.test-stand.fun/ready
+BASE_URL=https://tickets.test-stand.fun bash deploy/smoke.sh
+```
+
+Пользователь подтвердил успех. Доменный smoke-тест прошёл с ID 0b6ff149-8c1b-4945-8c23-0b107e7001f2.
+
+Затем проверили продление всех сертификатов и повторное применение роли.
+
+```bash
+ssh -i ~/.ssh/linux-test.pem ec2-user@13.60.98.7 \
+  'sudo /opt/certbot/bin/certbot renew --dry-run --run-deploy-hooks'
+
+ansible-playbook -i infra/ansible/inventory.ini \
+  infra/ansible/public-https.yml --ask-vault-pass
+```
+
+Пользователь подтвердил успех dry-run для обоих и ожидаемый повторный запуск без изменений. Это симуляция продления. Реальное последующее продление по расписанию пока не зафиксировано.
+
+### 18.15. Полные текущие задачи и handlers
+
+Файл `infra/ansible/roles/public_https/tasks/main.yml`.
+
+```yaml
+- name: Установить Python для Certbot
+  ansible.builtin.package:
+    name:
+      - python3.12
+      - python3.12-pip
+    state: present
+
+- name: Установить Certbot в отдельное окружение
+  ansible.builtin.pip:
+    name: certbot==5.4.0
+    virtualenv: /opt/certbot
+    virtualenv_command: /usr/bin/python3.12 -m venv
+
+- name: Проверить версию Certbot
+  ansible.builtin.command:
+    cmd: /opt/certbot/bin/certbot --version
+  register: certbot_version
+  changed_when: false
+
+- name: Показать версию Certbot
+  ansible.builtin.debug:
+    msg: "{{ certbot_version.stdout }}"
+
+- name: Создать каталог проверки ACME
+  ansible.builtin.file:
+    path: /var/www/letsencrypt/.well-known/acme-challenge
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Создать тестовый файл ACME
+  ansible.builtin.copy:
+    content: "acme-check-ok\n"
+    dest: /var/www/letsencrypt/.well-known/acme-challenge/check.txt
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Разместить HTTP-конфигурацию ACME
+  ansible.builtin.template:
+    src: public-http.conf.j2
+    dest: /etc/nginx/conf.d/public-http.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Перечитать Nginx для публичного HTTPS
+
+- name: Проверить конфигурацию Nginx
+  ansible.builtin.command:
+    cmd: nginx -t
+  changed_when: false
+
+- name: Выпустить сертификат для публичного IP
+  ansible.builtin.command:
+    argv:
+      - /opt/certbot/bin/certbot
+      - certonly
+      - --non-interactive
+      - --agree-tos
+      - --email
+      - "{{ public_https_email }}"
+      - --webroot
+      - --webroot-path
+      - /var/www/letsencrypt
+      - --preferred-profile
+      - shortlived
+      - --ip-address
+      - "{{ public_https_ip }}"
+      - --cert-name
+      - tickets-ip
+    creates: /etc/letsencrypt/live/tickets-ip/fullchain.pem
+
+- name: Подключить HTTPS для публичного IP
+  ansible.builtin.template:
+    src: public-ip-https.conf.j2
+    dest: /etc/nginx/conf.d/public-ip-https.conf
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Перечитать Nginx для публичного HTTPS
+
+- name: Проверить конфигурацию после подключения HTTPS
+  ansible.builtin.command:
+    cmd: nginx -t
+  changed_when: false
+
+- name: Создать каталог обработчиков продления Certbot
+  ansible.builtin.file:
+    path: /etc/letsencrypt/renewal-hooks/deploy
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Установить обработчик обновления сертификатов
+  ansible.builtin.template:
+    src: reload-nginx.sh.j2
+    dest: /etc/letsencrypt/renewal-hooks/deploy/reload-nginx
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Установить службу продления сертификатов
+  ansible.builtin.template:
+    src: certbot-renew.service.j2
+    dest: /etc/systemd/system/certbot-renew.service
+    owner: root
+    group: root
+    mode: '0644'
+
+- name: Установить таймер продления сертификатов
+  ansible.builtin.template:
+    src: certbot-renew.timer.j2
+    dest: /etc/systemd/system/certbot-renew.timer
+    owner: root
+    group: root
+    mode: '0644'
+  notify: Перезапустить таймер продления сертификатов
+
+- name: Включить таймер продления сертификатов
+  ansible.builtin.systemd_service:
+    name: certbot-renew.timer
+    daemon_reload: true
+    enabled: true
+    state: started
+
+- name: Выпустить сертификат для доменного имени
+  ansible.builtin.command:
+    argv:
+      - /opt/certbot/bin/certbot
+      - certonly
+      - --non-interactive
+      - --agree-tos
+      - --email
+      - "{{ public_https_email }}"
+      - --webroot
+      - --webroot-path
+      - /var/www/letsencrypt
+      - --domain
+      - "{{ public_https_domain }}"
+      - --cert-name
+      - tickets-domain
+    creates: /etc/letsencrypt/live/tickets-domain/fullchain.pem
+  when: public_https_domain_enabled | bool
+
+- name: Подключить HTTPS для доменного имени
+  ansible.builtin.template:
+    src: public-domain-https.conf.j2
+    dest: /etc/nginx/conf.d/public-domain-https.conf
+    owner: root
+    group: root
+    mode: '0644'
+  when: public_https_domain_enabled | bool
+  notify: Перечитать Nginx для публичного HTTPS
+
+- name: Проверить итоговую конфигурацию Nginx
+  ansible.builtin.command:
+    cmd: nginx -t
+  changed_when: false
+```
+
+Файл `infra/ansible/roles/public_https/handlers/main.yml`.
+
+```yaml
+- name: Перечитать Nginx для публичного HTTPS
+  ansible.builtin.systemd_service:
+    name: nginx
+    state: reloaded
+
+- name: Перезапустить таймер продления сертификатов
+  ansible.builtin.systemd_service:
+    name: certbot-renew.timer
+    daemon_reload: true
+    state: restarted
+```
+
+### 18.16. Подключение к общему playbook
+
+В site.yml после nginx_lab подключили роль по условию наличия IP.
+
+```yaml
+    - role: public_https
+      when: public_https_ip | default('') | length > 0
+```
+
+Общий запуск выполнили только для новой VM.
+
+```bash
+ansible-playbook -i infra/ansible/inventory.ini infra/ansible/site.yml \
+  --limit tickets-clean --syntax-check --ask-vault-pass
+
+ansible-playbook -i infra/ansible/inventory.ini infra/ansible/site.yml \
+  --limit tickets-clean -e environment_name=training --ask-vault-pass
+```
+
+Пользователь подтвердил успешный повторный прогон с ожидаемым changed=0. Отдельный public-https.yml сохранён для работы только с сертификатами и Nginx.
+
+### 18.17. Что ещё проверить в реализации
+
+При чтении текущих задач обнаружен важный порядок первоначальной подготовки. После template public-http.conf есть nginx -t, но handler reload отложен до конца play. При первом запуске всей роли на чистой VM Certbot может начать HTTP-01 до загрузки нового location. Ранее упражнение проходили поэтапно, поэтому HTTP-конфигурация уже была применена до добавления задачи выпуска. Перед новым развёртыванием необходимо добавить flush_handlers после проверки HTTP-конфигурации и перед выпуском IP-сертификата.
+
+Также в итоговом HTTP-шаблоне redirect уже включён. При первом выпуске для нового сервера сертификата ещё нет. Сами challenge-файлы должны отдаваться напрямую через отдельный location. До первого выпуска нужно убедиться, что этот location уже активен.
+
+Изменение IP или домена при существующем файле fullchain.pem не вызывает автоматический перевыпуск из-за creates. Выключение public_https_domain_enabled пропускает задачи домена, но не удаляет уже установленный конфиг. Это ограничения текущего учебного варианта.
+
+На момент дополнения полная внешняя проверка закрытия портов базы и API ещё не выполнена. Публичный IP EC2 не закрепляли Elastic IP. После Stop/Start нужно проверить адрес, DNS и соответствие IP-сертификата.
+
+### 18.18. Зафиксированные результаты
+
+| Проверка | Результат |
+| --- | --- |
+| A-запись tickets.test-stand.fun | 13.60.98.7, NOERROR |
+| HTTP-01 по IP и домену | Тестовый файл читается |
+| Доверенный HTTPS по IP | /ready возвращает 200 |
+| Доверенный HTTPS по домену | Проверка и smoke-тест прошли |
+| Перенаправление HTTP → HTTPS | Проверено, ACME остаётся на HTTP |
+| Timer продления | Активен, связан со службой |
+| Dry-run обоих сертификатов с deploy hook | Пользователь подтвердил успех |
+| Smoke по IP | b6dcf053-020e-48d8-ad42-2682a5419cb2 |
+| Smoke по домену | 0b6ff149-8c1b-4945-8c23-0b107e7001f2 |
+| Повторный общий site.yml | Пользователь подтвердил успех без изменений |
+| Первый непрерывный прогон HTTPS на ещё одной чистой VM | Не выполнялся |
+
+Материалы, использованные при настройке — [IP-сертификаты Let’s Encrypt](https://letsencrypt.org/2026/01/15/6day-and-ip-general-availability) и [поддержка в Certbot](https://letsencrypt.org/2026/03/11/shorter-certs-certbot).

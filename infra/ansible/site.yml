@@ -8,6 +8,8 @@
     - postgres
     - app
     - nginx_lab
+    - role: public_https
+      when: public_https_ip | default('') | length > 0
 
   post_tasks:
     - name: Показать сведения о VM

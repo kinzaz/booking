@@ -1,0 +1,10 @@
+- name: Перечитать Nginx для публичного HTTPS
+  ansible.builtin.systemd_service:
+    name: nginx
+    state: reloaded
+
+- name: Перезапустить таймер продления сертификатов
+  ansible.builtin.systemd_service:
+    name: certbot-renew.timer
+    daemon_reload: true
+    state: restarted

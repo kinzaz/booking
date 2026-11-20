@@ -1,0 +1,14 @@
+server {
+    listen 80;
+    server_name {{ public_https_ip }} {{ public_https_domain }};
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/letsencrypt;
+        default_type text/plain;
+        try_files $uri =404;
+    }
+
+    location / {
+        return 308 https://$host$request_uri;
+    }
+}

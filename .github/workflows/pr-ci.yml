@@ -1,6 +1,9 @@
 name: Pull request CI
 
-on: pull_request
+on:
+  pull_request:
+  push:
+    branches: [master]
 
 permissions:
   contents: read
@@ -52,3 +55,51 @@ jobs:
         run: |
           docker compose -f deploy/compose.yaml logs --no-color
           docker compose -p tickets-upgrade -f deploy/compose.yaml logs --no-color
+
+      - name: Save tested API image
+        if: github.event_name == 'push'
+        run: |
+          container=$(docker compose -f deploy/compose.yaml ps -q api)
+          docker tag "$(docker inspect --format '{{.Image}}' "$container")" "tickets-api:$GITHUB_SHA"
+          docker save "tickets-api:$GITHUB_SHA" -o "$RUNNER_TEMP/api.tar"
+
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push'
+        with:
+          name: tested-api
+          path: ${{ runner.temp }}/api.tar
+          retention-days: 1
+
+  publish:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      ECR_URI: 998115851061.dkr.ecr.eu-north-1.amazonaws.com/tickets-api
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: tested-api
+          path: ${{ runner.temp }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::998115851061:role/github-booking-ecr
+          aws-region: eu-north-1
+
+      - name: Publish API and record digest
+        run: |
+          existing=$(aws ecr list-images --repository-name tickets-api \
+            --filter tagStatus=TAGGED --query "imageIds[?imageTag=='$GITHUB_SHA'].imageDigest | [0]" --output text)
+          if [[ "$existing" == "None" ]]; then
+            aws ecr get-login-password | docker login --username AWS --password-stdin "${ECR_URI%/*}"
+            docker load -i "$RUNNER_TEMP/api.tar"
+            docker tag "tickets-api:$GITHUB_SHA" "$ECR_URI:$GITHUB_SHA"
+            docker push "$ECR_URI:$GITHUB_SHA"
+          fi
+          digest=$(aws ecr describe-images --repository-name tickets-api --image-ids imageTag="$GITHUB_SHA" \
+            --query 'imageDetails[0].imageDigest' --output text)
+          echo "Commit \`$GITHUB_SHA\` → \`$ECR_URI@$digest\`" >> "$GITHUB_STEP_SUMMARY"

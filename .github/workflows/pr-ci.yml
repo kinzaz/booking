@@ -1,33 +1,34 @@
-#name: Pull request CI
-#
-#on: pull_request
-#
-#permissions:
-#  contents: read
-#
-#jobs:
-#  check:
-#    runs-on: ubuntu-latest
-#    steps:
-#      - uses: actions/checkout@v4
-#
-#      - uses: actions/setup-go@v5
-#        with:
-#          go-version-file: app/go.mod
-#          cache-dependency-path: app/go.sum
-#
-#      - name: Build and test Go packages
-#        working-directory: app
-#        run: |
-#          go build ./...
-#          go test ./...
-#
-#      - name: Start the booking service
-#        run: docker compose -f deploy/compose.yaml up -d --build --wait frontend
-#
-#      - name: Check booking through Nginx
-#        run: bash deploy/smoke.sh
-#
-#      - name: Show service logs on failure
-#        if: failure()
-#        run: docker compose -f deploy/compose.yaml logs --no-color
+name: Pull request CI
+
+on: pull_request
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: app/go.mod
+          cache-dependency-path: app/go.sum
+
+      - name: Build and test Go packages
+        working-directory: app
+        run: |
+          go build ./...
+          go test ./...
+
+      - name: Start the booking service
+        run: docker compose -f deploy/compose.yaml up -d --build --wait frontend
+
+      - name: Check booking through Nginx
+        run: bash deploy/smoke.sh
+
+      - name: Show service logs on failure
+        if: failure()
+        run: docker compose -f deploy/compose.yaml logs --no-color

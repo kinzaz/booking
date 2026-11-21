@@ -1,33 +1,54 @@
-#name: Pull request CI
-#
-#on: pull_request
-#
-#permissions:
-#  contents: read
-#
-#jobs:
-#  check:
-#    runs-on: ubuntu-latest
-#    steps:
-#      - uses: actions/checkout@v4
-#
-#      - uses: actions/setup-go@v5
-#        with:
-#          go-version-file: app/go.mod
-#          cache-dependency-path: app/go.sum
-#
-#      - name: Build and test Go packages
-#        working-directory: app
-#        run: |
-#          go build ./...
-#          go test ./...
-#
-#      - name: Start the booking service
-#        run: docker compose -f deploy/compose.yaml up -d --build --wait frontend
-#
-#      - name: Check booking through Nginx
-#        run: bash deploy/smoke.sh
-#
-#      - name: Show service logs on failure
-#        if: failure()
-#        run: docker compose -f deploy/compose.yaml logs --no-color
+name: Pull request CI
+
+on: pull_request
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: app/go.mod
+          cache-dependency-path: app/go.sum
+
+      - name: Build and test Go packages
+        working-directory: app
+        run: |
+          go build ./...
+          go test ./...
+
+      - name: Start the booking service
+        run: docker compose -f deploy/compose.yaml up -d --build --wait frontend
+
+      - name: Check booking through Nginx
+        run: bash deploy/smoke.sh
+
+      - name: Check upgrade from migration 001
+        env:
+          COMPOSE_PROJECT_NAME: tickets-upgrade
+          COMPOSE_FILE: deploy/compose.yaml
+        run: |
+          docker compose up -d --wait postgres
+          db() { docker compose exec -T postgres psql -X -v ON_ERROR_STOP=1 -U tickets -d tickets "$@"; }
+          db < app/internal/booking/migrations/001_init.sql
+          db <<'SQL'
+          CREATE TABLE schema_migrations (name text PRIMARY KEY);
+          INSERT INTO schema_migrations VALUES ('001_init.sql');
+          INSERT INTO events (id, title, category, venue, description, starts_at, capacity, remaining)
+          VALUES ('upgrade-check', 'Before upgrade', 'test', 'test', '', now(), 10, 7);
+          SQL
+          docker compose up -d --build --wait api
+          test "$(db -Atc "SELECT count(*) FROM schema_migrations WHERE name = '002_add_event_organizer.sql'")" = 1
+          test "$(db -Atc "SELECT remaining FROM events WHERE id = 'upgrade-check' AND organizer_name IS NULL")" = 7
+
+      - name: Show service logs on failure
+        if: failure()
+        run: |
+          docker compose -f deploy/compose.yaml logs --no-color
+          docker compose -p tickets-upgrade -f deploy/compose.yaml logs --no-color

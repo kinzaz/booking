@@ -1,0 +1,33 @@
+name: Staging Ansible ping
+
+on: workflow_dispatch
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Ansible
+        run: |
+          python3 -m venv "$RUNNER_TEMP/ansible"
+          "$RUNNER_TEMP/ansible/bin/pip" install ansible-core
+
+      - name: Check staging SSH access
+        env:
+          SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+          KNOWN_HOSTS: ${{ vars.STAGING_KNOWN_HOSTS }}
+        run: |
+          umask 077
+          key="$RUNNER_TEMP/staging_key"
+          trap 'rm -f "$key"' EXIT
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > "$key"
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          "$RUNNER_TEMP/ansible/bin/ansible" staging -i infra/ansible/staging.ini \
+            --private-key "$key" --ssh-common-args='-o StrictHostKeyChecking=yes -o IdentitiesOnly=yes' \
+            -m ansible.builtin.ping

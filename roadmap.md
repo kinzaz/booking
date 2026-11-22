@@ -122,6 +122,7 @@ flowchart LR
 
 [Конспект недели 7: CI, Git SHA, digest и публикация в Amazon ECR](docs/learning/week-07-ci-ecr.md)
 [Конспект недели 7: Переезд учебного стенда из AWS в Yandex Cloud](docs/learning/week-07-migration-yandex-cloud.md)
+[Конспект недели 7: Перенос учебного стенда из Yandex Cloud в Selectel](docs/learning/week-07-migration-selectel.md)
 
 **Неделя 8.** Сделай pipeline развертывания в staging. Запусти Ansible playbook из CI/CD на runner: возьми playbook из репозитория, передай inventory для staging, получи SSH-учётные данные из секретов CI и сохрани результат запуска в журнале pipeline. Разбери, как выполнить тот же playbook через шаблон задания в AWX или Ansible Automation Platform для командных и production-развёртываний: проект из Git, inventory, credentials, права на запуск и история заданий. После деплоя выполняй smoke-тест. Храни ссылку на последнюю рабочую версию и отработай откат. Сделай учебный релиз, который успешно стартует, но ломает создание брони. Проверь, обнаруживает ли его проверка после деплоя.
 
@@ -134,12 +135,12 @@ flowchart LR
 - [x] Найти исходный релиз. Полный URI с digest и результат скачивания на Ubuntu VM записаны в [конспекте переезда, §7](docs/learning/week-07-migration-yandex-cloud.md).
 - [x] Создать [inventory staging](infra/ansible/staging.ini). Локальная команда `ansible-inventory -i infra/ansible/staging.ini --graph` показывает один хост `tickets-staging` в группе `staging`.
 - [x] Проверить подключение с Mac модулем Ansible `ping`. Хост `tickets-staging` ответил `pong`, Ansible обнаружил `/usr/bin/python3.12`, результат — `changed: false`.
-- [ ] Получить доступ с runner через [Staging Ansible ping](.github/workflows/staging-ping.yml). Вход отдельным ключом CI с Mac проверен. 22 ноября runner получил SSH-приветствие staging, затем отдельное TCP-подключение Ansible завершилось тайм-аутом. Сохранить отдельный ключ в секрете среды staging, сверить ключ хоста и получить `pong` уже из задания GitHub Actions.
+- [x] Проверить доступ с GitHub runner к Selectel staging. 23 ноября Ansible вошёл как `root` отдельным ключом CI, проверил ключ хоста и успешно выполнил `ansible.builtin.ping`. После обновления `STAGING_KNOWN_HOSTS` пользователь подтвердил успешную проверку из `master`. [Журнал проверки в тестовой ветке](https://github.com/kinzaz/booking/actions/runs/45075024432)
 
 **2. Развернуть первый релиз через Ansible**
 
 - [ ] Подготовить конфигурацию staging для API, PostgreSQL, worker и frontend с Nginx. Для API передавать опубликованный URI с digest. Для остальных компонентов зафиксировать версии и способ доставки.
-- [ ] Написать playbook для Ubuntu. Получить доступ к реестру через сервисный аккаунт VM, скачать образ, подготовить постоянный том БД, применить миграции и обеспечить наличие тестового мероприятия `night-jazz`.
+- [ ] Написать playbook для Ubuntu. Настроить на VM доступ для чтения из Selectel Container Registry, скачать образ, подготовить постоянный том БД, применить миграции и обеспечить наличие тестового мероприятия `night-jazz`.
 - [ ] Запустить сервисы и проверить через Nginx ответ `/ready`. Повторить playbook с тем же релизом и проверить сохранность данных.
 
 **3. Связать деплой и проверку бронирования**

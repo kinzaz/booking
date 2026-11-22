@@ -17,6 +17,24 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/ansible"
           "$RUNNER_TEMP/ansible/bin/pip" install ansible-core
 
+      - name: Diagnose SSH network path
+        continue-on-error: true
+        run: |
+          target=$("$RUNNER_TEMP/ansible/bin/ansible-inventory" -i infra/ansible/staging.ini --host tickets-staging | jq -er '.ansible_host')
+          date -u '+%Y-%m-%dT%H:%M:%SZ'
+          echo "Target: $target:22"
+          printf 'Runner public IPv4: '
+          curl -4fsS --max-time 5 https://checkip.amazonaws.com || echo 'lookup unavailable'
+          python3 - "$target" <<'PYTHON'
+          import socket
+          import sys
+
+          with socket.create_connection((sys.argv[1], 22), timeout=7) as connection:
+              print("TCP connected", flush=True)
+              with connection.makefile("rb") as stream:
+                  print("Server greeting:", stream.readline(256).decode(errors="replace").strip())
+          PYTHON
+
       - name: Check staging SSH access
         env:
           SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}

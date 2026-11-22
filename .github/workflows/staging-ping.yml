@@ -1,6 +1,9 @@
 name: Staging Ansible ping
 
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/selectel-ansible-ping]
 
 permissions:
   contents: read

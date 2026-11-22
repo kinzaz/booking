@@ -73,6 +73,7 @@ jobs:
   publish:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     needs: check
+    environment: staging
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -90,9 +91,9 @@ jobs:
           REGISTRY_PASSWORD: ${{ secrets.SELECTEL_REGISTRY_PASSWORD }}
           REGISTRY_NAME: ${{ vars.SELECTEL_REGISTRY }}
         run: |
-          : "${REGISTRY_NAME:?Set SELECTEL_REGISTRY in repository variables}"
-          : "${REGISTRY_USERNAME:?Set SELECTEL_REGISTRY_USERNAME in repository secrets}"
-          : "${REGISTRY_PASSWORD:?Set SELECTEL_REGISTRY_PASSWORD in repository secrets}"
+          : "${REGISTRY_NAME:?Set SELECTEL_REGISTRY in staging environment variables}"
+          : "${REGISTRY_USERNAME:?Set SELECTEL_REGISTRY_USERNAME in staging environment secrets}"
+          : "${REGISTRY_PASSWORD:?Set SELECTEL_REGISTRY_PASSWORD in staging environment secrets}"
           printf '%s' "$REGISTRY_PASSWORD" | docker login cr.selcloud.ru --username "$REGISTRY_USERNAME" --password-stdin
 
       - name: Publish API and record digest

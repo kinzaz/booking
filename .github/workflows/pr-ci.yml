@@ -89,7 +89,7 @@ jobs:
         id: auth
         uses: docker://ghcr.io/yc-actions/yc-iam-token-fed:1.0.0
         with:
-          yc-sa-id: ${{ vars.YC_PUBLISHER_SA_ID }}
+          yc-sa-id: aje07q0kj9athjuufvro
 
       - name: Publish API and record digest
         shell: bash

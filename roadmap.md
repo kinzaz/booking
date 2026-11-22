@@ -134,7 +134,7 @@ flowchart LR
 - [x] Найти исходный релиз. Полный URI с digest и результат скачивания на Ubuntu VM записаны в [конспекте переезда, §7](docs/learning/week-07-migration-yandex-cloud.md).
 - [x] Создать [inventory staging](infra/ansible/staging.ini). Локальная команда `ansible-inventory -i infra/ansible/staging.ini --graph` показывает один хост `tickets-staging` в группе `staging`.
 - [x] Проверить подключение с Mac модулем Ansible `ping`. Хост `tickets-staging` ответил `pong`, Ansible обнаружил `/usr/bin/python3.12`, результат — `changed: false`.
-- [ ] Получить доступ с runner через [Staging Ansible ping](.github/workflows/staging-ping.yml). Вход отдельным ключом CI с Mac проверен. Сохранить отдельный ключ в секрете среды staging, сверить ключ хоста и получить `pong` уже из задания GitHub Actions.
+- [ ] Получить доступ с runner через [Staging Ansible ping](.github/workflows/staging-ping.yml). Вход отдельным ключом CI с Mac проверен. 22 ноября runner получил SSH-приветствие staging, затем отдельное TCP-подключение Ansible завершилось тайм-аутом. Сохранить отдельный ключ в секрете среды staging, сверить ключ хоста и получить `pong` уже из задания GitHub Actions.
 
 **2. Развернуть первый релиз через Ansible**
 

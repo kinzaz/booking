@@ -78,28 +78,38 @@ jobs:
       contents: read
       id-token: write
     env:
-      ECR_URI: 998115851061.dkr.ecr.eu-north-1.amazonaws.com/tickets-api
+      IMAGE_URI: registry.yandexcloud.net/cn1gpsf8uv1vr8qj62s6/tickets-api
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: tested-api
           path: ${{ runner.temp }}
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Get Yandex Cloud IAM token
+        id: auth
+        uses: docker://ghcr.io/yc-actions/yc-iam-token-fed:1.0.0
         with:
-          role-to-assume: arn:aws:iam::998115851061:role/github-booking-ecr
-          aws-region: eu-north-1
+          yc-sa-id: aje07q0kj9athjuufvro
 
       - name: Publish API and record digest
+        shell: bash
+        env:
+          IAM_TOKEN: ${{ steps.auth.outputs.token }}
         run: |
-          existing=$(aws ecr list-images --repository-name tickets-api \
-            --filter tagStatus=TAGGED --query "imageIds[?imageTag=='$GITHUB_SHA'].imageDigest | [0]" --output text)
-          if [[ "$existing" == "None" ]]; then
-            aws ecr get-login-password | docker login --username AWS --password-stdin "${ECR_URI%/*}"
+          echo "$IAM_TOKEN" | docker login --username iam --password-stdin "${IMAGE_URI%/*/*}"
+          image="$IMAGE_URI:$GITHUB_SHA"
+          manifest_digest() {
+            docker buildx imagetools inspect "$image" --format '{{json .Manifest}}' | jq -er '.digest'
+          }
+          if ! digest=$(manifest_digest 2>"$RUNNER_TEMP/inspect-error"); then
+            if ! grep -Eiq 'manifest unknown|not found|name unknown' "$RUNNER_TEMP/inspect-error"; then
+              cat "$RUNNER_TEMP/inspect-error" >&2
+              exit 1
+            fi
             docker load -i "$RUNNER_TEMP/api.tar"
-            docker tag "tickets-api:$GITHUB_SHA" "$ECR_URI:$GITHUB_SHA"
-            docker push "$ECR_URI:$GITHUB_SHA"
+            docker tag "tickets-api:$GITHUB_SHA" "$image"
+            docker push "$image"
+            digest=$(manifest_digest)
           fi
-          digest=$(aws ecr describe-images --repository-name tickets-api --image-ids imageTag="$GITHUB_SHA" \
-            --query 'imageDetails[0].imageDigest' --output text)
-          echo "Commit \`$GITHUB_SHA\` → \`$ECR_URI@$digest\`" >> "$GITHUB_STEP_SUMMARY"
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          printf 'Commit `%s` → `%s@%s`\n' "$GITHUB_SHA" "$IMAGE_URI" "$digest" >> "$GITHUB_STEP_SUMMARY"

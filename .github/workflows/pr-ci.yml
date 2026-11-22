@@ -89,7 +89,16 @@ jobs:
         id: auth
         uses: docker://ghcr.io/yc-actions/yc-iam-token-fed:1.0.0
         with:
-          yc-sa-id: aje07q0kj9athjuufvro
+          yc-sa-id: aje195o8ms9d7r1r9ll1
+
+      - name: Show OIDC claims on authentication failure
+        if: failure() && steps.auth.outcome == 'failure'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const jwt = await core.getIDToken('https://github.com/' + context.repo.owner)
+            const {iss, aud, sub} = JSON.parse(Buffer.from(jwt.split('.')[1], 'base64url'))
+            core.info(JSON.stringify({iss, aud, sub}))
 
       - name: Publish API and record digest
         shell: bash

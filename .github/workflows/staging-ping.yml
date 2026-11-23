@@ -1,6 +1,9 @@
 name: Staging Ansible ping
 
-on: workflow_dispatch
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/selectel-ansible-ping]
 
 permissions:
   contents: read
@@ -37,6 +40,7 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_KEY" > "$key"
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          cat infra/ansible/selectel_known_hosts >> ~/.ssh/known_hosts
           "$RUNNER_TEMP/ansible/bin/ansible" staging -i infra/ansible/staging.ini \
             --private-key "$key" --ssh-common-args='-o StrictHostKeyChecking=yes -o IdentitiesOnly=yes' \
             -vvvv -m ansible.builtin.ping

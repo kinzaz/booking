@@ -1,7 +1,13 @@
+# $schema: https://json.schemastore.org/github-workflow.json
 name: Staging Ansible ping
 
 on:
   workflow_dispatch:
+    inputs:
+      apply:
+        description: "Применить плейбук на staging"
+        type: boolean
+        default: false
   push:
     branches: [codex/selectel-ansible-ping]
 
@@ -48,6 +54,7 @@ jobs:
         env:
           SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
           KNOWN_HOSTS: ${{ vars.STAGING_KNOWN_HOSTS }}
+          APPLY: ${{ github.event_name == 'workflow_dispatch' && inputs.apply }}
         run: |
           umask 077
           key="$RUNNER_TEMP/staging_key"
@@ -59,8 +66,12 @@ jobs:
           "$RUNNER_TEMP/ansible/bin/ansible" staging -i infra/ansible/inventory.ini \
             --private-key "$key" --ssh-common-args='-o StrictHostKeyChecking=yes -o IdentitiesOnly=yes' \
             -vvvv -m ansible.builtin.ping
+          mode=(--check)
+          if [[ "$APPLY" == "true" ]]; then
+            mode=()
+          fi
           "$RUNNER_TEMP/ansible/bin/ansible-playbook" \
             -i infra/ansible/inventory.ini infra/ansible/site.yml \
             --private-key "$key" \
             --ssh-common-args='-o StrictHostKeyChecking=yes -o IdentitiesOnly=yes' \
-            --check
+            "${mode[@]}"

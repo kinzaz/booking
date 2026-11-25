@@ -75,3 +75,11 @@ jobs:
             --private-key "$key" \
             --ssh-common-args='-o StrictHostKeyChecking=yes -o IdentitiesOnly=yes' \
             "${mode[@]}"
+          if [[ "$APPLY" == "true" ]]; then
+            host_vars=$("$RUNNER_TEMP/ansible/bin/ansible-inventory" \
+              -i infra/ansible/inventory.ini --host tickets-staging |
+              jq -er '.ansible_user + "@" + .ansible_host')
+            ssh -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -i "$key" "$host_vars" \
+              'BASE_URL=http://127.0.0.1:8080 bash -s' < deploy/smoke.sh
+          fi

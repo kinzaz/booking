@@ -59,3 +59,8 @@ jobs:
           "$RUNNER_TEMP/ansible/bin/ansible" staging -i infra/ansible/inventory.ini \
             --private-key "$key" --ssh-common-args='-o StrictHostKeyChecking=yes -o IdentitiesOnly=yes' \
             -vvvv -m ansible.builtin.ping
+          "$RUNNER_TEMP/ansible/bin/ansible-playbook" \
+            -i infra/ansible/inventory.ini infra/ansible/site.yml \
+            --private-key "$key" \
+            --ssh-common-args='-o StrictHostKeyChecking=yes -o IdentitiesOnly=yes' \
+            --check

@@ -82,4 +82,16 @@ jobs:
             ssh -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
               -i "$key" "$host_vars" \
               'BASE_URL=http://127.0.0.1:8080 bash -s' < deploy/smoke.sh
+            ssh -o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes \
+              -i "$key" "$host_vars" 'cd /opt/tickets-staging && bash -se' <<'REMOTE'
+          tmp=$(mktemp .last-good-release.XXXXXX)
+          trap 'rm -f "$tmp"' EXIT
+          for service in api frontend; do
+            container=$(docker compose ps -q "$service")
+            image=$(docker inspect --format '{{.Config.Image}}' "$container")
+            [[ "$image" =~ @sha256:[0-9a-f]{64}$ ]]
+            printf '%s_IMAGE=%s\n' "${service^^}" "$image" >> "$tmp"
+          done
+          mv -f "$tmp" last-good-release.env
+          REMOTE
           fi

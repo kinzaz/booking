@@ -69,3 +69,6 @@
           - frontend
         state: present
         wait: true
+      environment:
+        API_IMAGE: "{{ api_image | default('') }}"
+        FRONTEND_IMAGE: "{{ frontend_image | default('') }}"

@@ -16,7 +16,7 @@ services:
       retries: 15
 
   api:
-    image: cr.selcloud.ru/tickets-lab/tickets-api@sha256:05093681f16585bc3a952881633096a3197b551f266e5d6c784a3b1e729ceb1f
+    image: "${API_IMAGE:-cr.selcloud.ru/tickets-lab/tickets-api@sha256:05093681f16585bc3a952881633096a3197b551f266e5d6c784a3b1e729ceb1f}"
     environment:
       DATABASE_URL: "postgres://tickets:${POSTGRES_PASSWORD:?задай POSTGRES_PASSWORD}@postgres:5432/tickets?sslmode=disable"
       BOOKING_TTL: ${BOOKING_TTL:-15m}
@@ -41,7 +41,7 @@ services:
         condition: service_healthy
 
   frontend:
-    image: cr.selcloud.ru/tickets-lab/tickets-frontend@sha256:e94f6614e3b063a16ca7606c68af016a755e0fb962c8b75dee42e582002d1bda
+    image: "${FRONTEND_IMAGE:-cr.selcloud.ru/tickets-lab/tickets-frontend@sha256:e94f6614e3b063a16ca7606c68af016a755e0fb962c8b75dee42e582002d1bda}"
     ports:
       - "127.0.0.1:${WEB_PORT:-8080}:80"
     volumes:

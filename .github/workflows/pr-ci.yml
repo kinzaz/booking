@@ -70,6 +70,20 @@ jobs:
           path: ${{ runner.temp }}/api.tar
           retention-days: 1
 
+      - name: Save tested frontend image
+        if: github.event_name == 'push'
+        run: |
+          container=$(docker compose -f deploy/compose.yaml ps -q frontend)
+          docker tag "$(docker inspect --format '{{.Image}}' "$container")" "tickets-frontend:$GITHUB_SHA"
+          docker save "tickets-frontend:$GITHUB_SHA" -o "$RUNNER_TEMP/frontend.tar"
+
+      - uses: actions/upload-artifact@v4
+        if: github.event_name == 'push'
+        with:
+          name: tested-frontend
+          path: ${{ runner.temp }}/frontend.tar
+          retention-days: 1
+
   publish:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     needs: check
@@ -83,6 +97,11 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: tested-api
+          path: ${{ runner.temp }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: tested-frontend
           path: ${{ runner.temp }}
 
       - name: Log in to Selectel Container Registry
@@ -110,6 +129,28 @@ jobs:
             fi
             docker load -i "$RUNNER_TEMP/api.tar"
             docker tag "tickets-api:$GITHUB_SHA" "$image"
+            docker push "$image"
+            digest=$(manifest_digest)
+          fi
+          [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
+          printf 'Commit `%s` → `%s@%s`\n' "$GITHUB_SHA" "$IMAGE_URI" "$digest" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish frontend and record digest
+        env:
+          IMAGE_URI: cr.selcloud.ru/${{ vars.SELECTEL_REGISTRY }}/tickets-frontend
+        shell: bash
+        run: |
+          image="$IMAGE_URI:$GITHUB_SHA"
+          manifest_digest() {
+            docker buildx imagetools inspect "$image" --format '{{json .Manifest}}' | jq -er '.digest'
+          }
+          if ! digest=$(manifest_digest 2>"$RUNNER_TEMP/inspect-error"); then
+            if ! grep -Eiq 'manifest unknown|not found|name unknown' "$RUNNER_TEMP/inspect-error"; then
+              cat "$RUNNER_TEMP/inspect-error" >&2
+              exit 1
+            fi
+            docker load -i "$RUNNER_TEMP/frontend.tar"
+            docker tag "tickets-frontend:$GITHUB_SHA" "$image"
             docker push "$image"
             digest=$(manifest_digest)
           fi

@@ -132,15 +132,17 @@ flowchart LR
 
 **1. Подготовить staging**
 
-- [x] Найти исходный релиз. Полный URI с digest и результат скачивания на Ubuntu VM записаны в [конспекте переезда, §7](docs/learning/week-07-migration-yandex-cloud.md).
-- [x] Создать [inventory staging](infra/ansible/staging.ini). Локальная команда `ansible-inventory -i infra/ansible/staging.ini --graph` показывает один хост `tickets-staging` в группе `staging`.
+- [x] Найти исходный релиз. На staging в Selectel выполнен успешный `docker pull cr.selcloud.ru/tickets-lab/tickets-api@sha256:05093681f16585bc3a952881633096a3197b551f266e5d6c784a3b1e729ceb1f`. Docker подтвердил указанный digest.
+- [x] Создать [inventory staging](infra/ansible/inventory.ini). Локальная команда `ansible-inventory -i infra/ansible/inventory.ini --graph` показывает один хост `tickets-staging` в группе `staging`.
 - [x] Проверить подключение с Mac модулем Ansible `ping`. Хост `tickets-staging` ответил `pong`, Ansible обнаружил `/usr/bin/python3.12`, результат — `changed: false`.
 - [x] Проверить доступ с GitHub runner к Selectel staging. 23 ноября Ansible вошёл как `root` отдельным ключом CI, проверил ключ хоста и успешно выполнил `ansible.builtin.ping`. После обновления `STAGING_KNOWN_HOSTS` пользователь подтвердил успешную проверку из `master`. [Журнал проверки в тестовой ветке](https://github.com/kinzaz/booking/actions/runs/45075024432)
 
 **2. Развернуть первый релиз через Ansible**
 
+25 ноября на новой VM Selectel (`178.72.184.147`) плейбук с Mac развернул PostgreSQL и API из приватного реестра: первый прогон `ok=7 changed=6 failed=0`, повторный прогон проверен. Для новой VM доступ с GitHub runner ещё предстоит проверить.
+
 - [ ] Подготовить конфигурацию staging для API, PostgreSQL, worker и frontend с Nginx. Для API передавать опубликованный URI с digest. Для остальных компонентов зафиксировать версии и способ доставки.
-- [ ] Написать playbook для Ubuntu. Настроить на VM доступ для чтения из Selectel Container Registry, скачать образ, подготовить постоянный том БД, применить миграции и обеспечить наличие тестового мероприятия `night-jazz`.
+- [x] Написать playbook для Ubuntu. На новой VM запрос к `/api/events` вернул `night-jazz` с 80 доступными местами. Настроить на VM доступ для чтения из Selectel Container Registry, скачать образ, подготовить постоянный том БД, применить миграции и обеспечить наличие тестового мероприятия `night-jazz`.
 - [ ] Запустить сервисы и проверить через Nginx ответ `/ready`. Повторить playbook с тем же релизом и проверить сохранность данных.
 
 **3. Связать деплой и проверку бронирования**

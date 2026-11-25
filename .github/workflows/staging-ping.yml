@@ -23,7 +23,7 @@ jobs:
       - name: Record runner and staging addresses2
         continue-on-error: true
         run: |
-          target=$("$RUNNER_TEMP/ansible/bin/ansible-inventory" -i infra/ansible/staging.ini --host tickets-staging | jq -er '.ansible_host')
+          target=$("$RUNNER_TEMP/ansible/bin/ansible-inventory" -i infra/ansible/inventory.ini --host tickets-staging | jq -er '.ansible_host')
           date -u '+%Y-%m-%dT%H:%M:%SZ'
           echo "Target: $target:22"
           printf 'Runner public IPv4: '
@@ -41,6 +41,6 @@ jobs:
           printf '%s\n' "$SSH_KEY" > "$key"
           printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
           cat infra/ansible/selectel_known_hosts >> ~/.ssh/known_hosts
-          "$RUNNER_TEMP/ansible/bin/ansible" staging -i infra/ansible/staging.ini \
+          "$RUNNER_TEMP/ansible/bin/ansible" staging -i infra/ansible/inventory.ini \
             --private-key "$key" --ssh-common-args='-o StrictHostKeyChecking=yes -o IdentitiesOnly=yes' \
             -vvvv -m ansible.builtin.ping

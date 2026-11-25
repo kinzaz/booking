@@ -1,100 +1,59 @@
-- name: Настроить учебную VM
-  hosts: lab
+- name: Подготовить staging в Selectel
+  hosts: staging
   become: true
-  gather_facts: true
+  gather_facts: false
 
-  roles:
-    - users
-    - postgres
-    - app
-    - nginx_lab
-    - role: public_https
-      when: public_https_ip | default('') | length > 0
+  tasks:
+    - name: Установить Docker Engine и плагин Compose из репозитория Ubuntu
+      ansible.builtin.apt:
+        name:
+          - docker.io
+          - docker-compose-v2
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
 
-  post_tasks:
-    - name: Показать сведения о VM
-      ansible.builtin.debug:
-        msg:
-          - "ОС: {{ ansible_facts['distribution'] }}"
-          - "Версия ОС: {{ ansible_facts['distribution_version'] }}"
-          - "Архитектура: {{ ansible_facts['architecture'] }}"
-          - "Менеджер пакетов: {{ ansible_facts['pkg_mgr'] }}"
+    - name: Запустить Docker и включить автозапуск
+      ansible.builtin.systemd_service:
+        name: docker
+        state: started
+        enabled: true
 
-    - name: Применить отложенные обработчики
-      ansible.builtin.meta: flush_handlers
-
-    - name: Проверить подключение к базе с учётными данными API
-      community.postgresql.postgresql_ping:
-        login_host: 127.0.0.1
-        login_user: "{{ postgres_app_user }}"
-        login_password: "{{ vault_postgres_app_password }}"
-        login_db: "{{ postgres_app_database }}"
-      register: app_database_connection
+    - name: Войти в Selectel Container Registry для скачивания образов
+      community.docker.docker_login:
+        registry_url: cr.selcloud.ru
+        username: "{{ vault_selectel_registry_username }}"
+        password: "{{ vault_selectel_registry_password }}"
+        state: present
       no_log: true
 
-    - name: Подтвердить доступ приложения к базе
-      ansible.builtin.assert:
-        that:
-          - app_database_connection.is_available
-        success_msg: Подключение к базе с учётными данными API работает.
-        fail_msg: Не удалось подключиться к базе с учётными данными API.
+    - name: Создать каталог приложения на staging
+      ansible.builtin.file:
+        path: /opt/tickets-staging
+        state: directory
+        mode: '0750'
 
-    - name: Дождаться готовности API
-      ansible.builtin.uri:
-        url: http://127.0.0.1:8080/ready
-        status_code: 200
-      register: app_readiness
-      until: app_readiness.status == 200
-      retries: 10
-      delay: 2
+    - name: Скопировать конфигурацию Compose на staging
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../deploy/compose.staging.yaml"
+        dest: /opt/tickets-staging/compose.yaml
+        mode: '0644'
 
-    - name: Проверить готовность API через Nginx
-      ansible.builtin.uri:
-        url: http://127.0.0.1:8081/ready
-        status_code: 200
-        return_content: true
-      register: proxy_readiness
+    - name: Записать пароль PostgreSQL в файл окружения Compose
+      ansible.builtin.copy:
+        dest: /opt/tickets-staging/.env
+        content: |
+          POSTGRES_PASSWORD={{ vault_postgres_password }}
+        owner: root
+        group: root
+        mode: '0600'
+      no_log: true
+      diff: false
 
-    - name: Проверить ответ API через Nginx
-      ansible.builtin.assert:
-        that:
-          - proxy_readiness.json.status == 'ready'
-        success_msg: Nginx передаёт запросы готовности в API.
-
-    - name: Запросить учебную страницу Nginx
-      ansible.builtin.uri:
-        url: http://127.0.0.1:18090/
-        status_code: 200
-        return_content: true
-      register: nginx_response
-
-    - name: Проверить ответ Nginx
-      ansible.builtin.assert:
-        that:
-          - "('Application: ' ~ application_name) in nginx_response.content"
-          - "('Environment: ' ~ environment_name) in nginx_response.content"
-        success_msg: Nginx отвечает с ожидаемой конфигурацией.
-        fail_msg: Ответ Nginx отличается от ожидаемого.
-
-    - name: Проверить API через HTTPS с проверкой сертификата
-      ansible.builtin.command:
-        argv:
-          - curl
-          - --max-time
-          - "5"
-          - --fail
-          - --silent
-          - --show-error
-          - --cacert
-          - /etc/nginx/tickets-lab.crt
-          - --resolve
-          - tickets.invalid:8443:127.0.0.1
-          - https://tickets.invalid:8443/ready
-      register: app_https_response
-      changed_when: false
-
-    - name: Проверить содержимое HTTPS-ответа
-      ansible.builtin.assert:
-        that:
-          - (app_https_response.stdout | from_json).status == 'ready'
-        success_msg: API доступен через HTTPS с проверкой сертификата.
+    - name: Запустить API на staging и дождаться готовности
+      community.docker.docker_compose_v2:
+        project_src: /opt/tickets-staging
+        services:
+          - api
+        state: present
+        wait: true

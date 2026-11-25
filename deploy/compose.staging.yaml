@@ -41,7 +41,7 @@ services:
         condition: service_healthy
 
   frontend:
-    build: ../app/frontend
+    image: cr.selcloud.ru/tickets-lab/tickets-frontend@sha256:e94f6614e3b063a16ca7606c68af016a755e0fb962c8b75dee42e582002d1bda
     ports:
       - "127.0.0.1:${WEB_PORT:-8080}:80"
     volumes:

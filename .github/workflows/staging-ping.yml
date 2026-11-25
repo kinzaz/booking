@@ -20,7 +20,16 @@ jobs:
           python3 -m venv "$RUNNER_TEMP/ansible"
           "$RUNNER_TEMP/ansible/bin/pip" install ansible-core
 
-      - name: Record runner and staging addresses2
+      - name: Подготовить пароль Ansible Vault
+        env:
+          VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
+        run: |
+          umask 077
+          : "${VAULT_PASSWORD:?Не задан секрет ANSIBLE_VAULT_PASSWORD}"
+          printf '%s\n' "$VAULT_PASSWORD" > "$RUNNER_TEMP/vault-pass"
+          echo "ANSIBLE_VAULT_PASSWORD_FILE=$RUNNER_TEMP/vault-pass" >> "$GITHUB_ENV"
+
+      - name: Record runner and staging addresses
         continue-on-error: true
         run: |
           target=$("$RUNNER_TEMP/ansible/bin/ansible-inventory" -i infra/ansible/inventory.ini --host tickets-staging | jq -er '.ansible_host')

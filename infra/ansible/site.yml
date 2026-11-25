@@ -4,6 +4,12 @@
   gather_facts: false
 
   tasks:
+    - name: Разрешить вход на staging по ключу GitHub Actions
+      ansible.builtin.lineinfile:
+        path: /root/.ssh/authorized_keys
+        line: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/files/tickets-staging-ci.pub') }}"
+        state: present
+
     - name: Установить Docker Engine и плагин Compose из репозитория Ubuntu
       ansible.builtin.apt:
         name:
@@ -39,6 +45,12 @@
         dest: /opt/tickets-staging/compose.yaml
         mode: '0644'
 
+    - name: Скопировать конфигурацию Nginx на staging
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../deploy/nginx.conf"
+        dest: /opt/tickets-staging/nginx.conf
+        mode: '0644'
+
     - name: Записать пароль PostgreSQL в файл окружения Compose
       ansible.builtin.copy:
         dest: /opt/tickets-staging/.env
@@ -50,10 +62,10 @@
       no_log: true
       diff: false
 
-    - name: Запустить API на staging и дождаться готовности
+    - name: Запустить frontend и его зависимости на staging
       community.docker.docker_compose_v2:
         project_src: /opt/tickets-staging
         services:
-          - api
+          - frontend
         state: present
         wait: true

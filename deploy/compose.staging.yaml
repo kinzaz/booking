@@ -31,9 +31,7 @@ services:
       retries: 15
 
   worker:
-    build:
-      context: ../app
-      target: worker
+    image: cr.selcloud.ru/tickets-lab/tickets-worker@sha256:812b52d7248cf55d2203fa43aa960bb2016120735abd8eb831ff675185d6c1e9
     environment:
       DATABASE_URL: "postgres://tickets:${POSTGRES_PASSWORD:?задай POSTGRES_PASSWORD}@postgres:5432/tickets?sslmode=disable"
     depends_on:

@@ -67,6 +67,7 @@
         project_src: /opt/tickets-staging
         services:
           - frontend
+          - worker
         state: present
         wait: true
       environment:

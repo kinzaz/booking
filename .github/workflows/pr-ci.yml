@@ -29,8 +29,34 @@ jobs:
       - name: Start the booking service
         run: docker compose -f deploy/compose.yaml up -d --build --wait frontend
 
+      - name: Start booking worker
+        run: docker compose -f deploy/compose.yaml up -d --build --wait worker
+
       - name: Check booking through Nginx
         run: bash deploy/smoke.sh
+
+      - name: Check worker confirms a booking
+        run: |
+          set -euo pipefail
+          url=http://127.0.0.1:8080/api/bookings
+          id=$(curl -fsS "$url" \
+            -H 'Content-Type: application/json' \
+            -H "Idempotency-Key: worker-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            -d '{"event_id":"city-layers","quantity":1}' | jq -er '.id')
+          trap 'curl -fsS -X DELETE "$url/$id" >/dev/null || true' EXIT
+
+          for attempt in {1..10}; do
+            booking=$(curl -fsS --max-time 3 "$url/$id")
+            if jq -e '.status == "active" and .confirmation_at != null' \
+                <<< "$booking" >/dev/null; then
+              echo "Worker confirmed booking $id"
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "Worker did not confirm booking $id in 10 attempts" >&2
+          exit 1
 
       - name: Check upgrade from migration 001
         env:

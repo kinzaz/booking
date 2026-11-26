@@ -8,6 +8,10 @@ on:
         description: "Применить плейбук на staging"
         type: boolean
         default: false
+      api_image:
+        description: "Полный адрес образа API с @sha256 для этого запуска"
+        type: string
+        required: false
   push:
     branches: [codex/selectel-ansible-ping]
 
@@ -55,6 +59,7 @@ jobs:
           SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
           KNOWN_HOSTS: ${{ vars.STAGING_KNOWN_HOSTS }}
           APPLY: ${{ github.event_name == 'workflow_dispatch' && inputs.apply }}
+          API_IMAGE: ${{ inputs.api_image }}
         run: |
           umask 077
           key="$RUNNER_TEMP/staging_key"
@@ -70,11 +75,19 @@ jobs:
           if [[ "$APPLY" == "true" ]]; then
             mode=()
           fi
+          image_args=()
+          if [[ -n "$API_IMAGE" ]]; then
+            if [[ ! "$API_IMAGE" =~ ^cr\.selcloud\.ru/tickets-lab/tickets-api@sha256:[0-9a-f]{64}$ ]]; then
+              echo "Ожидается образ tickets-api из tickets-lab с полным digest sha256" >&2
+              exit 1
+            fi
+            image_args=(-e "api_image=$API_IMAGE")
+          fi
           "$RUNNER_TEMP/ansible/bin/ansible-playbook" \
             -i infra/ansible/inventory.ini infra/ansible/site.yml \
             --private-key "$key" \
             --ssh-common-args='-o StrictHostKeyChecking=yes -o IdentitiesOnly=yes' \
-            "${mode[@]}"
+            "${mode[@]}" "${image_args[@]}"
           if [[ "$APPLY" == "true" ]]; then
             host_vars=$("$RUNNER_TEMP/ansible/bin/ansible-inventory" \
               -i infra/ansible/inventory.ini --host tickets-staging |

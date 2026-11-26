@@ -232,6 +232,7 @@ jobs:
     name: Deploy published API to staging
     needs: publish
     uses: ./.github/workflows/staging-ping.yml
+    secrets: inherit
     with:
       apply: true
       api_image: ${{ needs.publish.outputs.api_image }}

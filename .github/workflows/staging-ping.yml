@@ -2,6 +2,14 @@
 name: Staging Ansible ping
 
 on:
+  workflow_call:
+    inputs:
+      apply:
+        type: boolean
+        required: true
+      api_image:
+        type: string
+        required: true
   workflow_dispatch:
     inputs:
       apply:
@@ -58,7 +66,7 @@ jobs:
         env:
           SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
           KNOWN_HOSTS: ${{ vars.STAGING_KNOWN_HOSTS }}
-          APPLY: ${{ github.event_name == 'workflow_dispatch' && inputs.apply }}
+          APPLY: ${{ inputs.apply || false }}
           API_IMAGE: ${{ inputs.api_image }}
         run: |
           umask 077

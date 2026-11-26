@@ -127,6 +127,8 @@ jobs:
   publish:
     if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     needs: check
+    outputs:
+      api_image: ${{ steps.publish_api.outputs.api_image }}
     environment: staging
     runs-on: ubuntu-latest
     permissions:
@@ -161,6 +163,7 @@ jobs:
           printf '%s' "$REGISTRY_PASSWORD" | docker login cr.selcloud.ru --username "$REGISTRY_USERNAME" --password-stdin
 
       - name: Publish API and record digest
+        id: publish_api
         shell: bash
         run: |
           image="$IMAGE_URI:$GITHUB_SHA"
@@ -179,6 +182,7 @@ jobs:
           fi
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
           printf 'Commit `%s` → `%s@%s`\n' "$GITHUB_SHA" "$IMAGE_URI" "$digest" >> "$GITHUB_STEP_SUMMARY"
+          printf 'api_image=%s@%s\n' "$IMAGE_URI" "$digest" >> "$GITHUB_OUTPUT"
 
       - name: Publish frontend and record digest
         env:
@@ -223,3 +227,11 @@ jobs:
           fi
           [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]
           printf 'Commit `%s` → `%s@%s`\n' "$GITHUB_SHA" "$IMAGE_URI" "$digest" >> "$GITHUB_STEP_SUMMARY"
+
+  deploy_staging:
+    name: Deploy published API to staging
+    needs: publish
+    uses: ./.github/workflows/staging-ping.yml
+    with:
+      apply: true
+      api_image: ${{ needs.publish.outputs.api_image }}
